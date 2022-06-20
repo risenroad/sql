@@ -1,0 +1,163 @@
+-- Pассчитайте винтажное время стояния в разных аэропортах по отдельным аэропортам. 
+
+
+
+select id_port
+        , left_w_order
+        , h_1/cnt_total as h_1
+        , h_2/cnt_total as h_2
+        , h_3/cnt_total as h_3
+        , h_4/cnt_total as h_4  
+        , h_5/cnt_total as h_5
+        , h_6/cnt_total as h_6
+        , h_7/cnt_total as h_7
+        , h_8/cnt_total as h_8
+        , h_9/cnt_total as h_9
+        
+from
+        
+        (select    sum(case when time_left - time_came > '1 hours' then 1 else 0 end)::float as h_1
+                , sum(case when time_left - time_came > '2 hours' then 1 else 0 end)::float as h_2
+                , sum(case when time_left - time_came > '3 hours' then 1 else 0 end)::float as h_3
+                , sum(case when time_left - time_came > '4 hours' then 1 else 0 end)::float as h_4
+                , sum(case when time_left - time_came > '5 hours' then 1 else 0 end)::float as h_5
+                , sum(case when time_left - time_came > '6 hours' then 1 else 0 end)::float as h_6
+                , sum(case when time_left - time_came > '7 hours' then 1 else 0 end)::float as h_7
+                , sum(case when time_left - time_came > '8 hours' then 1 else 0 end)::float as h_8
+                , sum(case when time_left - time_came > '9 hours' then 1 else 0 end)::float as h_9
+                , count(*) cnt_total
+                , id_port
+                , left_w_order
+        from skytaxi.airport_visit
+        group by id_port, left_w_order
+        ) as t1
+order by id_port
+
+
+--док с когортами: https://docs.google.com/spreadsheets/d/1wnaGRP4UEb9JiFyYHxqbRn3ABVcMnAUM/edit#gid=283498183
+
+
+-- EXTRACT('hours' from avg(time_left - time_came)) as hours
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time
+--         , id_port
+-- from skytaxi.airport_visit
+-- group by id_port
+
+
+-- Сравните винтажное распределение стояния в аэропорту, 
+
+
+-- select    EXTRACT('hours' from avg(time_left - time_came)) as hours
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time
+--         , id_port
+--         , left_w_order
+-- from skytaxi.airport_visit
+-- group by id_port, left_w_order
+-- order by id_port
+
+
+-- когда водитель получил заказ и когда уехал без заказа (skytaxi.airport_visit, уехал с заказом - left_w_order = 1)
+
+
+-- select    EXTRACT('hours' from avg(time_left - time_came)) as hours
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time
+--         , id_port
+--         , left_w_order
+-- from skytaxi.airport_visit
+-- group by  left_w_order, id_port
+-- order by id_port
+
+
+--- сравним, отличаются ли глобально данные по водителям, уехавшим с заказом и тем, кто уехал без заказа
+
+-- select    --EXTRACT('hours' from avg(time_left - time_came)) as hours
+--          EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time
+--         , left_w_order
+-- from skytaxi.airport_visit
+-- group by  left_w_order
+
+-- кажется, что не особо, разница в десятых долях часа
+
+-- и отдельно по аэропортам
+
+-- select    t1.id_port
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as hours_with_order
+--         , avg(hours_without_order)as  hours_without_order 
+--         , avg(hours_without_order) - (EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60) as diff
+-- from skytaxi.airport_visit as t1
+--     full join (  select   id_port
+--                         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as hours_without_order
+--                 from skytaxi.airport_visit
+--                 where left_w_order = 1
+--                 group by  id_port
+--         ) as t2 on t1.id_port = t2.id_port
+-- where left_w_order = 0
+-- group by  t1.id_port
+-- order by t1.id_port
+
+-- не вижу никаких различий значимых, что довольно странно, непонятно, что водители делают в аэропорту по 4-5 часов, возможно, спят?
+
+
+
+-- select    id_port
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time_dif
+-- from skytaxi.airport_visit
+-- where left_w_order = 1
+-- group by  id_port
+
+
+
+-- select    count(*) total
+--         , count(distinct id_driver) drivers
+-- from skytaxi.airport_visit
+
+
+
+-- посмотрю данные только по водителям, которые были в аэропорту больше 1 раза
+
+
+-- select  id_driver
+--         , count(id_driver) as cnt
+--         , EXTRACT('hours' from avg(time_left - time_came)) as hours
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as time
+-- from skytaxi.airport_visit
+-- group by id_driver
+-- having count(id_driver)>1
+-- order by time desc
+
+-- максимально 6 часов, что довольно близко к среднему
+
+-- посмотрю по месяцам
+
+-- на графике больше всего прыгают значения Сочи и Кольцово и Внуково, посмотрю еа них отдельно
+
+
+
+-- select    id_port
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as hours_stay
+--         , date_trunc('day', time_came) as month
+-- from skytaxi.airport_visit
+-- where id_port in('Аэропорт Сочи', 'Кольцово', 'Внуково')
+-- group by  id_port, month
+-- order by month
+
+
+-- И остальные аэропорты, тут выделяются скачки в Шереметьево, но в целом разброс не такой большой
+
+-- select    id_port
+--         , EXTRACT('hours' from avg(time_left - time_came)) + EXTRACT('min' from avg(time_left - time_came))/60 as hours_stay
+--         , date_trunc('day', time_came) as month
+-- from skytaxi.airport_visit
+-- where id_port not in('Аэропорт Сочи', 'Кольцово', 'Внуково')
+-- group by  id_port, month
+-- order by month
+
+
+
+
+
+
+
+
+
+-- ср время 0 years 0 mons 0 days 4 hours 38 mins 6.670212 secs

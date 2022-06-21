@@ -1,0 +1,54 @@
+-- Какое количество просмотров было совершено в течение 10 дней (включительно) после платной первичной покупки (считать только фильмы, в которых участвовало только США)?
+
+select avg(cnt_per_user) 
+        , sum(cnt_per_user)
+from (
+        select count(*) as cnt_per_user
+        from skycinema.watch_client as t1
+            left join skycinema.client_sign_up as t2
+            on t1.user_id = t2.user_id
+            left join skycinema.content_list as t3 
+            on t1.content_id = t3.id
+        where debit_kind = 'Первичная покупка'
+            and amt_payment > 0
+            and date_watch - date_purchase <= 10
+            and country like 'США'
+        
+      ) t1
+      
+      
+      
+-- Позднее взыскание: сколько есть типов кредита, по которым мы выдали больше 100 млн руб (late_collection_clients)?
+
+select    sum(amt_loan)
+        , credit_type
+from skybank.late_collection_clients
+group by credit_type
+having sum(amt_loan) > 100000000
+
+
+
+--В каком проценте фильмов, совмещающих в себе и ужасы, и комедию, участвовали только США? (округлить до целого процента)
+
+select sum(case when country = 'США' then 1 else 0 end)::float/count(*)
+from skycinema.content_list
+where lower(genre) like '%ужас%' and lower(genre) like '%комед%'
+
+
+--Раннее взыскание: какой средний объём кредита выдали в городе, 
+-- третьем по среднему объёму кредита? (desc) (округлить до целого)
+
+select avg(amt_credit) as avg_loan
+        , name_city
+from skybank.early_collection_clients as t1
+    join skybank.region_dict as t2
+    on t1.id_city = t2.id_city
+group by name_city
+order by avg_loan desc
+
+
+-- На основании 150 наблюдений мы вычислили, что процент клиентов, доживающих до 120 дня составляет 38%. Какова длина интервала погрешности для этой конверсии? (в процентах, до 1 знака после запятой)
+    
+    
+
+    

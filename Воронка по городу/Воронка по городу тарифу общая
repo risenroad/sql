@@ -1,0 +1,49 @@
+-- По тарифу (города)
+
+-- select c.name_city as city, name_tariff as tariff
+--     , count(order_finish_time)*100/count(id_order) as complited
+-- from skytaxi.order_list as o 
+-- join skytaxi.city_dict as c on o.id_city = c.id_city
+-- join skytaxi.tariff_dict as t on t.id_tariff = o.id_tariff
+-- group by  city, tariff, o.id_tariff
+-- order by  o.id_tariff, complited
+-- limit 100
+
+-- По городу (тарифы)
+
+-- select c.name_city as city, name_tariff as tariff
+--     , count(order_finish_time)*100/count(id_order) as complited
+-- from skytaxi.order_list as o 
+-- join skytaxi.city_dict as c on o.id_city = c.id_city
+-- join skytaxi.tariff_dict as t on t.id_tariff = o.id_tariff
+-- group by  tariff, city, o.id_tariff -- ввела id_tariff, чтобы тариф сортировался по целовой политике, а не алфавиту
+-- order by  city, o.id_tariff, complited
+-- limit 100
+
+-- Общая сводка по тарифам. 
+
+-- select  name_tariff as tariff
+--     , count(order_finish_time)*100/count(id_order) as complited
+-- from skytaxi.order_list as o 
+-- join skytaxi.city_dict as c on o.id_city = c.id_city
+-- join skytaxi.tariff_dict as t on t.id_tariff = o.id_tariff
+-- group by  tariff, o.id_tariff -- ввела id_tariff, чтобы тариф сортировался по целовой политике, а не алфавиту
+-- order by  o.id_tariff
+-- limit 100
+
+-- Видно, что больше всего просаживаются по конверсии Комфорт+ и Бизнес. Можно поисследовать, где больше отвалов: на стороне сервиса, водителя или пассажира
+
+-- Цепная воронка
+
+select  
+     name_tariff as tariff
+    , count(id_order)*100/count(id_order) as order_created
+    , count(id_driver)*100/count(id_order) as driver_accepted
+    , count(assign_time)*100/count(id_driver) as driver_aggreed 
+    , count(arrive_to_client_time)*100/count(assign_time) as could_start
+    , count(order_finish_time)*100/count(arrive_to_client_time) as complited
+from skytaxi.order_list as o 
+join skytaxi.city_dict as c on o.id_city = c.id_city
+join skytaxi.tariff_dict as t on t.id_tariff = o.id_tariff
+where name_tariff in ('Комфорт+', 'Бизнес')
+group by name_tariff

@@ -1,0 +1,133 @@
+-- Наша задача — смоделировать изменение балансов студентов. Баланс — это количество уроков, которое есть у каждого студента. 
+
+-- Чтобы проверить, всё ли в порядке с нашими данными, составить список гипотез и вопросов, нам важно понимать: 
+
+-- - сколько всего уроков было на балансе **всех учеников** за каждый календарный день;
+-- - как это количество менялось под влиянием транзакций (оплат, начислений, корректирующих списаний) 
+-- и уроков (списаний с баланса по мере прохождения уроков).
+
+-- Также мы хотим создать таблицу, где будут балансы **каждого студента** за каждый день.
+
+-- ### Результат курсовой
+
+-- В результате должен получиться запрос, который собирает данные о балансах студентов за каждый прожитый ими день.
+
+
+--- Первая транзацкция
+
+with first_transaction as
+
+(select    user_id
+        , min(date_trunc('month', transaction_datetime)) as first_transaction
+from skyeng_db.payments
+where status_name = 'success'
+group by user_id
+),
+
+
+
+--- Все даты 
+
+all_dates as
+
+(select GENERATE_SERIES(MIN(class_start_datetime::date), MAX(class_start_datetime::date), '1 day')as dt
+from skyeng_db.classes
+),
+
+--- Дата последнего взаимодействия
+
+last_class as
+(select    user_id
+        , max(date_trunc('month', class_start_datetime)) as last_class
+from skyeng_db.classes
+where class_status = 'success'
+    and class_type != 'trial'
+group by user_id
+)
+
+
+
+
+--- Юзеры, у которых нет либо уроков, либо оплат - 94 человека (всего 1015, без пропусков в данных 921)
+
+-- broken_users as
+
+-- (select user_id
+-- from first_transaction as ft 
+
+-- UNION
+
+-- select user_id      
+-- from last_class as lc 
+
+-- where  ft.user_id is null or lc.user_id is null
+-- )
+
+not_broken_users as
+(
+    select *
+            , date_part('day', last_class - first_transaction)
+            --ft.user_id as user_id
+           -- , GENERATE_SERIES(last_class::date, first_transaction::date, '1 day') as dt
+    from first_transaction as ft  
+        full outer join last_class as lc
+            on ft.user_id = lc.user_id
+), 
+
+
+--- Даты жизни для каждого клиента
+dates_by_stud as
+
+(select ft.user_id
+        , first_transaction
+        , dt
+        , last_class
+from first_transaction as ft  
+    inner join last_class as lc
+        on ft.user_id = lc.user_id
+    left join all_dates as ad
+        on 1=1
+        and dt between first_transaction and last_class
+),        
+        
+-- Покупка уроков по дням
+
+lessons_by_day_users as
+
+(select user_id  
+        , date_trunc('day', transaction_datetime) as dt
+        , sum(classes) as cnt_classes
+from skyeng_db.payments
+where status_name = 'success'
+group by user_id, dt
+)
+
+-- Кумулятивная сумма купленных уроков
+
+select  user_id
+        , date_trunc('month', dt) dt
+        , cnt_classes_null
+       -- , sum(cnt_classes_null) over(partition by user_id order by date_trunc('month', dt)) cnt_classes
+from(
+    select  dbs.user_id
+        , dbs.first_transaction
+        , dbs.last_class
+        , dbs.dt
+        , coalesce( lbdu.cnt_classes, 0) as cnt_classes_null
+    
+    from dates_by_stud as dbs
+        left join lessons_by_day_users as lbdu
+            on dbs.dt = lbdu.dt
+                and dbs.user_id = lbdu.user_id
+    )t1
+order by cnt_classes_null
+
+        
+
+
+
+
+
+-- select count(*) --40072
+-- from skyeng_db.classes
+-- where class_status = 'success'

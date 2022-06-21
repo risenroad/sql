@@ -1,0 +1,202 @@
+-- Вы забираете в суд клиентов, у которых есть кредит вида POS-1 или RC и у которых есть проверенный мобильный телефон. 
+-- Также по клиенту не должно быть заведено рассрочки в течение последних 6 месяцев.
+-- Вопрос: почему клиентов становится меньше по сравнению с 2020 годом и что с этим можно сделать.
+
+-- посмотрим все данные по подходящим категориям клиентов
+
+select *
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+
+
+-- 1. Опишите максимально подробно процесс. Нарисуйте блок-схему процесса.
+
+-- Есть группа очень давних выпускников, предположу, что есть конкретное событие, которое определяет клиента в эту группу, например х вермени задолженности
+-- Из этой группы регулярно вытаскивают по критериям клиентов и отправляют в разные процессы, которые позволят уменьшить долг клиента. Это может быть реструктуризация, суд, рассрочка и другие. 
+-- При этом часть процессов не должны пересеаться, например, клиенты, которые попадают в процесс рассрочки не могут одновременно попасть в суд. 
+-- Реструктуризация долга с судом може пересекаться.
+-- Процесс рассрочки длится 6 месяцев, после чего клиент снова возвращается в базу, но в течение 6 месяцев мы не можем забрать клиента в суд
+-- Также важно учитывать, что в суд попадают только клиенты с подтвержденным номером телефона и только двух из 4 типов займов.
+
+-- 2. Напишите SQL-скрипт, который еженедельно выгружает клиентов для суда (для простоты, допустим, что данные всегда берутся из витрины "Позднее взыскание")
+
+select l.id_client
+    , current_date - date_rassrochka as days_from_rassrochka -- на всякий случай вывожу количество дней с рассрочки, если нужно будет приоритизировать клиентов по этому параметру
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+    and date_rassrochka < current_date - interval '6 month'
+    or date_rassrochka is null
+limit 100
+
+
+-- дальше я буду все рассчеты вести так из точки 1 сентября 2021
+
+-- сейчас не очень понимаю, что значит дата date_loan, посмотрю, сколько в среднем времени между это датой и датой рассрочки в нашем пуле клиентов
+
+select l.id_client, date_loan::date,  date_rassrochka
+    , current_date - date_rassrochka as days_from_rassrochka
+    , date_rassrochka - date_loan::date as days_from_loan_to_rassrochka
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+order by date_rassrochka - date_loan::date asc
+limit 100 
+
+-- К сожалению, нужно идти у менеджеру или дата инженерам, чтобы понять, что за даты в столбце date_loan, потому что во многих случаях рассрочка выдана раньше, чем сам займ
+
+-- 3. Посмотрите ретроспективную оценку пула клиентов для суда и убедитесь, что их кол-во действительно упало
+
+-- выведу одним запросом подсчет сравнительный сколько всего клиентов и какая часть из них подходила для суда 1 сентября 2020 и 1 сентября 2021
+-- предположу, что так как мы говорим о давних должниках, все, кто в таблице, уже были должниками к 1 сентября 2020
+
+select count(*) as Total
+    ,   count(case 
+        when date_rassrochka::date < '2020-09-01 00:00:00'::timestamp - interval '6 month'
+        or date_rassrochka is null
+        or date_rassrochka::date  > '2020-09-01 00:00:00' then l.id_client end)  as year_20
+    ,   count(case 
+        when date_rassrochka::date < '2021-09-01 00:00:00'::timestamp - interval '6 month' 
+        or date_rassrochka is null then l.id_client end) as year_21
+from skybank.late_collection_clients as l
+left join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+    
+-- По сути, мы сравниваем между собой два периода - полгода до 1 сенбятря 2020 и полгода до 1 сентября 2021, потому что в остальном наши выборки одинаковые. 
+-- Выходит, что ключевое различие в этих двух полугодиях, но чтобы видеть динамику, я продолжу смотреть все данные
+-- Посмотрим, сколько рассрочек выдавалось по годам
+
+select 
+      date_trunc('year', date_rassrochka::date) as date_rassrochka
+    , count(l.id_client) as clients
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+group by 
+        date_trunc('year', date_rassrochka::date)
+order by date_rassrochka
+        
+-- Есть ежегодный рост рассрочек, но в 2021 году было значительно больше рассрочек,чем в 2020
+
+-- 2021 352
+-- 2020 199
+-- 2019 137
+
+
+-- 2. Исследуйте динамику кол-ва клиентов, забираемых в рассрочку (таблица - rassrochka) по месяцам забора в рассрочку и по типам продукта
+-- 3. Нашли, в чём проблема?
+-- Посмотрим, в какой момент выросло количество рассрочек
+
+select 
+      date_trunc('month', date_rassrochka::date) as date_rassrochka
+    , count(l.id_client) as clients
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+group by 
+        date_trunc('month', date_rassrochka::date)
+order by date_rassrochka
+
+-- Если построить здесь же визуализацию, по ней видно отчетливо, 
+-- что с января 2021 вдвое вырастает кол-во рассрочек, с апреля вчетверо (к декабрю 2020). Видимо, что-то изменилось в процессах рассрочки. 
+-- Это могут быть KPI и теперь сотрудники больше выписывают рассрочек. Или условия, и теперь клиенты чаще соглащаются на более выгодные условия
+-- Посмотрим теперь, как эти рассрочки распределяются между типами займа
+
+select 
+      date_trunc('month', date_rassrochka::date) as date_rassrochka
+    , count(case when credit_type = 'POS-1' then l.id_client end) as POS
+    , count(case when credit_type = 'RC' then l.id_client end) as RC
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+group by 
+        date_trunc('month', date_rassrochka::date)
+order by date_rassrochka
+
+
+-- Рассрочек по займам типа RC в 2019-2020 всегда меньше, чем по POS-1, 
+-- в 21 же году их количество взлетает в 2-10 раз и выходит на один средний уровень с POS-1
+-- Нужно проверить, не изменилась ли структура работы с этим типом займов через другие инструменты
+
+select 
+      date_trunc('year', date_loan ::date) as date_loan 
+    , count(case when credit_type = 'POS-1' then l.id_client end) as POS
+    , count(case when credit_type = 'RC' then l.id_client end) as RC
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+group by 
+        date_trunc('year', date_loan ::date)
+        
+-- RC стали реструктуризировать чаще в 2021
+
+-- 1. Исследуйте сегменты выборки отправки в суд на сегодняшний день. 
+-- Постройте разбиение готового для отправки пула по месяцу выдачи кредита. Тут я не очень понимаю, что значит месяц кредита, если он может идти после рассрочки и что он нам показывает
+
+select  date_trunc('month', date_loan ::date) date_loan
+    , count(l.id_client) clients
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+    and date_rassrochka::date < '2021-09-01 00:00:00'::timestamp - interval '6 month'
+group by 
+        date_trunc('month', date_loan ::date)
+
+-- постройте матрицу "пол - семейное положение"
+
+select distinct married 
+        , count(case when gender = 'M' then gender end ) as male 
+        , count(case when gender = 'F' then gender end ) as female
+    
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+    and date_rassrochka::date < '2021-09-01 00:00:00'::timestamp - interval '6 month'
+group by 
+        married
+
+
+-- В нашей базе почти все неженатые и ни одного женатого клиента, это похоже на ошибку в данных
+
+select distinct married
+from skybank.late_collection_clients
+
+
+-- по типу продукта и по наличию высшего образования.
+
+select is_educ
+    , count(case when credit_type = 'POS-1' then l.id_client end) as POS
+    , count(case when credit_type = 'RC' then l.id_client end) as RC
+from skybank.late_collection_clients as l
+join skybank.rassrochka as r on l.id_client = r.id_client
+where 1=1
+    and credit_type in ('POS-1', 'RC')
+    and cellphone is not null
+group by 
+        is_educ
+
+--клиенты с образованием чаще берут RC-займ
+
+
+

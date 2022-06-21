@@ -1,0 +1,180 @@
+--------------
+--Подзапросы--
+--------------
+
+-- select t1.*, t2.watch_count 
+-- from skycinema.client_sign_up as t1
+--     left join (  select count(content_id) as watch_count
+--             from skycinema.watch_client
+--             group by user_id
+--          )  as t2 on user_id = user_id
+
+
+-- select t1.* 
+--         , t2.amt_sum
+-- from skycinema.watch_client as t1
+--     join (  select sum(amt_payment) as amt_sum
+--           , user_id
+--             from skycinema.client_sign_up
+--             group by user_id
+--          ) as t2 on t1.user_id = t2.user_id
+
+
+-- select count(days_between), days_between
+-- from(select    t2.last_purchase
+--              , t2.last_purchase-t1.date_purchase as days_between 
+--              , t1.date_purchase
+--      from skycinema.client_sign_up as t1
+--         join (  select max(date_purchase) as last_purchase, user_id
+--                 from skycinema.client_sign_up
+--                 group by user_id
+--              ) as t2 on t1.user_id = t2.user_id) as count_days
+-- group by days_between
+-- order by days_between
+
+
+
+
+
+-- Рассчитайте винтажную выдачу рассрочки по клиентам после реструктуризации кредита (поле date_loan)
+-- по квартальным периодам. 
+-- Надо выкинуть из анализа все реструктуризации, которые были выставлены после назначения рассрочки. 
+
+
+-- Вывела долю клиентов, 
+        
+
+-- with total_data as (select    t2.*
+--             , t1.date_loan::date
+--             , date_rassrochka - date_loan::date as diff
+--             , date_trunc('month', date_loan::date) as month
+--             , date_part('year', date_loan::date) as year
+--             , t1.id_client
+          
+--             from skybank.late_collection_clients as t1
+--               left join skybank.rassrochka as t2
+--                 on t1.id_client = t2.id_client
+--                 and date_loan::date < date_rassrochka
+--                 or date_rassrochka is null 
+--         ) 
+        
+-- select  month
+--         , count(diff) diff
+--         , count(*)-count(diff) not_rassrochka
+--         , (count(*)-count(diff))*100/ count(*) as part_not
+-- from total_data
+-- group by month
+-- order by month
+
+-- Рассчитайте лайфтайм реструктуризированного кредита до выдачи рассрочки
+
+
+
+-- with total_data as 
+--         (
+--             select    t1.id_client 
+--                     , t1.date_loan::date
+--                     , date_trunc('month', date_loan::date) as month_loan
+--                     , date_part('year', date_loan::date) as year_loan
+--                     , date_rassrochka - date_loan::date as diff
+--                     , t2.date_rassrochka
+          
+--             from skybank.late_collection_clients as t1
+--               left join skybank.rassrochka as t2
+--                 on t1.id_client = t2.id_client
+--                 and date_loan::date < date_rassrochka
+--                 or date_rassrochka is null 
+--         ) 
+        
+
+select    quarter_loan
+        , d_90 / total as d_90
+        , d_180 / total as d_180
+        , d_270 / total as d_270
+        , d_360 / total as d_360
+        , d_450 / total as d_450
+        , d_540 / total as d_540
+        , d_630 / total as d_630
+        , d_720 / total as d_720
+        , d_810 / total as d_810
+        , d_900 / total as d_900
+        , d_990 / total as d_990
+        , d_1080 / total as d_1080
+    
+
+from(      select    date_trunc('quarter', date_loan::date) as quarter_loan
+                    , count(*) as total
+                    , sum(case when date_rassrochka - date_loan::date > 90 or date_rassrochka is null then 1 else 0 end)::float as d_90 
+                    , sum(case when date_rassrochka - date_loan::date > 180 or date_rassrochka is null then 1 else 0 end)::float as d_180 
+                    , sum(case when date_rassrochka - date_loan::date > 270 or date_rassrochka is null then 1 else 0 end)::float as d_270 
+                    , sum(case when date_rassrochka - date_loan::date > 360 or date_rassrochka is null then 1 else 0 end)::float as d_360 
+                    , sum(case when date_rassrochka - date_loan::date > 450 or date_rassrochka is null then 1 else 0 end)::float as d_450 
+                    , sum(case when date_rassrochka - date_loan::date > 540 or date_rassrochka is null then 1 else 0 end)::float as d_540 
+                    , sum(case when date_rassrochka - date_loan::date > 630 or date_rassrochka is null then 1 else 0 end)::float as d_630 
+                    , sum(case when date_rassrochka - date_loan::date > 720 or date_rassrochka is null then 1 else 0 end)::float as d_720
+                    , sum(case when date_rassrochka - date_loan::date > 810 or date_rassrochka is null then 1 else 0 end)::float as d_810
+                    , sum(case when date_rassrochka - date_loan::date > 900 or date_rassrochka is null then 1 else 0 end)::float as d_900
+                    , sum(case when date_rassrochka - date_loan::date > 990 or date_rassrochka is null then 1 else 0 end)::float as d_990
+                    , sum(case when date_rassrochka - date_loan::date > 1080 or date_rassrochka is null then 1 else 0 end)::float as d_1080
+                    
+                  
+            from skybank.late_collection_clients as t1
+                left join skybank.rassrochka as t2
+                on t1.id_client = t2.id_client
+                and (date_loan::date < date_rassrochka or date_rassrochka is null)
+                and date_loan::date <= '2021-03-01'
+                
+               
+            -- where 1=1 
+            --         and (date_loan::date < date_rassrochka or date_rassrochka is null)
+            --         and date_loan::date <= '2021-03-01'
+            group by quarter_loan
+            
+        ) as by_days
+ 
+order by quarter_loan 
+
+
+
+
+
+-- with total_data as 
+--         (
+--             select    t1.id_client 
+--                     , t1.date_loan::date
+--                     , date_part('quarter', date_loan::date) as quarter_loan
+--                     , date_part('year', date_loan::date) as year_loan
+--                     , date_part('quarter', date_rassrochka) as quarter_rassrochka
+--                     , date_part('year', date_rassrochka) as year_rassrochka
+--                     , date_rassrochka - date_loan::date as diff
+--                     , t2.date_rassrochka
+          
+--             from skybank.late_collection_clients as t1
+--               left join skybank.rassrochka as t2
+--                 on t1.id_client = t2.id_client
+--                 and date_loan::date < date_rassrochka
+--                 or date_rassrochka is null 
+--         ) 
+        
+
+-- select id_client
+--         , quarter_loan
+--         , year_loan
+--         , quarter_rassrochka
+--         , year_rassrochka
+--         , diff
+
+-- from total_data
+-- -- group by quarter_loan, year_loan
+-- order by diff --year_loan, quarter_loan
+
+---Решение в гугл таблицах: https://docs.google.com/spreadsheets/d/1nWuU6A_kDEko9awc9ofBoabpKca3wSlF/edit#gid=373686900
+        
+
+
+
+
+
+
+
+

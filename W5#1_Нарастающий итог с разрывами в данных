@@ -1,0 +1,188 @@
+-- 1. Постройте для каждого города временной ряд количества выданных кредитов и сгладьте его с помощью скользящего среднего с параметрами 3, 10 и 20. 
+
+
+with total_data as
+
+(select date_trunc('month', GENERATE_SERIES(MIN(date_loan::date), MAX(date_loan::date), '1 month')) as mm
+                        , name_city
+                  from skybank.late_collection_clients as t_1
+                        --- приджойниваем все даты к каждому городу
+                        cross join (select distinct name_city
+                              from skybank.late_collection_clients t1
+                                join skybank.region_dict as t2
+                                    on t1.id_city = t2.id_city) as t_2 
+                          
+                  group by name_city 
+                  ),
+                  
+old_data as 
+
+(select date_trunc('month', date_loan::date) as mm
+          , name_city
+          , count(*) as cnt
+    from skybank.late_collection_clients as t1
+        join skybank.region_dict as t2
+            on t1.id_city = t2.id_city
+    group by mm, name_city)
+
+
+
+select mm   
+        , name_city
+        , avg(cnt) over (partition by name_city order by mm rows between 2 preceding and current row) as ma_3_cnt
+        , avg(cnt) over (partition by name_city order by mm rows between 9 preceding and current row) as ma_10_cnt
+        , avg(cnt) over (partition by name_city order by mm rows between 19 preceding and current row) as ma_20_cnt
+        
+from(
+    select    t1.mm     as mm
+            , t1.name_city as name_city
+            , coalesce(t2.cnt, 0) as cnt
+    from total_data  as t1
+        left join old_data as t2
+            on t1.mm = t2.mm
+                and t1.name_city = t2.name_city
+    order by name_city, mm
+) t1
+
+    
+    
+    
+
+    
+
+   
+
+-- 2. Сделайте то же самое с суммой выданных кредитов для каждого города. 
+
+with total_data as
+
+(select date_trunc('month', GENERATE_SERIES(MIN(date_loan::date), MAX(date_loan::date), '1 month')) as mm
+                        , name_city
+                  from skybank.late_collection_clients as t_1
+                        --- приджойниваем все даты к каждому городу
+                        cross join (select distinct name_city
+                              from skybank.late_collection_clients t1
+                                join skybank.region_dict as t2
+                                    on t1.id_city = t2.id_city) as t_2 
+                          
+                  group by name_city 
+                  ),
+                  
+old_data as 
+
+(select date_trunc('month', date_loan::date) as mm
+          , name_city
+          , sum(amt_loan) as sum_loan  
+    from skybank.late_collection_clients as t1
+        join skybank.region_dict as t2
+            on t1.id_city = t2.id_city
+    group by mm, name_city)
+
+
+
+select mm   
+        , name_city
+        , avg(sum_loan) over (partition by name_city order by mm rows between 2 preceding and current row) as ma_3_loan
+        , avg(sum_loan) over (partition by name_city order by mm rows between 9 preceding and current row) as ma_10_loan
+        , avg(sum_loan) over (partition by name_city order by mm rows between 19 preceding and current row) as ma_20_loan
+        
+from(
+    select    t1.mm     as mm
+            , t1.name_city as name_city
+            , coalesce(t2.sum_loan, 0) as sum_loan
+    from total_data  as t1
+        left join old_data as t2
+            on t1.mm = t2.mm
+                and t1.name_city = t2.name_city
+    order by name_city, mm
+) t1
+
+-- 3. Нарисуйте кумулятивное накопление количеств выданных кредитов (с помощью SQL)
+
+with total_data as
+
+(select date_trunc('month', GENERATE_SERIES(MIN(date_loan::date), MAX(date_loan::date), '1 month')) as mm
+                        , name_city
+                  from skybank.late_collection_clients as t_1
+                        --- приджойниваем все даты к каждому городу
+                        cross join (select distinct name_city
+                              from skybank.late_collection_clients t1
+                                join skybank.region_dict as t2
+                                    on t1.id_city = t2.id_city) as t_2 
+                          
+                  group by name_city 
+                  ),
+                  
+old_data as 
+
+(select date_trunc('month', date_loan::date) as mm
+          , name_city
+          , count(*) cnt  
+          --, sum(amt_loan) sum_loan 
+    from skybank.late_collection_clients as t1
+        join skybank.region_dict as t2
+            on t1.id_city = t2.id_city
+    group by mm, name_city)
+
+
+
+select mm   
+        , name_city
+        , sum(cnt_new) over (partition by name_city order by mm) as cnt_cum
+        , sum(cnt) over (partition by name_city order by mm) as cnt_old
+from(
+    select    t1.mm     as mm
+            , t1.name_city as name_city
+            , t2.cnt as cnt
+            , coalesce(t2.cnt, 0) as cnt_new
+           -- , sum(t2.cnt) over (partition by t2.name_city order by t1.mm) as cnt_cum
+    from total_data  as t1
+        left join old_data as t2
+            on t1.mm = t2.mm
+                and t1.name_city = t2.name_city
+    order by name_city, mm
+) t1
+            
+
+-- -- 4. Нарисуйте кумулятивное накопление сумм выданных кредитов (с помощью SQL)
+
+with total_data as
+
+(select date_trunc('month', GENERATE_SERIES(MIN(date_loan::date), MAX(date_loan::date), '1 month')) as mm
+                        , name_city
+                  from skybank.late_collection_clients as t_1
+                        --- приджойниваем все даты к каждому городу
+                        cross join (select distinct name_city
+                              from skybank.late_collection_clients t1
+                                join skybank.region_dict as t2
+                                    on t1.id_city = t2.id_city) as t_2 
+                          
+                  group by name_city 
+                  ),
+                  
+old_data as 
+
+(select date_trunc('month', date_loan::date) as mm
+          , name_city
+          , sum(amt_loan) as sum_loan  
+    from skybank.late_collection_clients as t1
+        join skybank.region_dict as t2
+            on t1.id_city = t2.id_city
+    group by mm, name_city)
+
+
+
+select mm   
+        , name_city
+        , sum(sum_loan) over (partition by name_city order by mm) as sum_loan_cum
+from(
+    select    t1.mm     as mm
+            , t1.name_city as name_city
+           -- , t2.sum_loan as sum_loan
+            , coalesce(t2.sum_loan, 0) as sum_loan
+    from total_data  as t1
+        left join old_data as t2
+            on t1.mm = t2.mm
+                and t1.name_city = t2.name_city
+    order by name_city, mm
+) t1

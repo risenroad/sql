@@ -1,0 +1,82 @@
+-- для каждого id_order выводит следующие агрегации:
+
+-- 1. Количество заказов в его тарифной группе
+-- 2. Количество заказов, по которым нашли водителя, чтобы сделать ему предложение в его тарифной группе
+-- 3. Количество заказов, по которым назначили водителя на заказ в его тарифной группе
+-- 4. Количество заказов, по которым водители доехали до точки начала заказа в его тарифной группе
+-- 5. Количество свершившихся поездок в его тарифной группе
+-- 6. O2R в его тарифной группе
+------
+-- 7. Количество заказов в его городе
+-- 8. Количество заказов, по которым нашли водителя, чтобы сделать ему предложение в его городе
+-- 9. Количество заказов, по которым назначили водителя на заказ в его городе
+-- 10. Количество заказов, по которым водители доехали до точки начала заказа в его городе
+-- 11. Количество свершившихся поездок в его городе
+-- 12. O2R в его городе
+-- 13. Количество заказов в его тарифной группе+городе
+-- 14. Количество свершившихся поездок в его тарифной группе+городе
+-- 15. O2R в его тарифной группе+городе
+---
+-- 16. Стандартное отклонение O2R (с помощью функции stddev) по его тарифной группе
+-- 17. Стандартное отклонение O2R (с помощью функции stddev) по его городу
+-- 18. Стандартное отклонение O2R (с помощью функции stddev) по его городу + тарифной группе
+---
+-- 19. Максимум и минимум интервала погрешности для O2R по его тарифной группе + его длину
+-- 20. Максимум и минимум интервала погрешности для O2R по его городу + его длину
+-- 21. Максимум и минимум интервала погрешности для O2R по его городу+тарифной группе + его длину
+
+select t2.*
+        ------- интервалы погрешности std/sqrt(n)
+        
+        , round("16_std_tariff" + "16_std_tariff"/sqrt("1_cnt_by_tariff")::numeric,3) as "19_right_error_tariff"
+        , round("16_std_tariff" - "16_std_tariff"/sqrt("1_cnt_by_tariff")::numeric,3) as "19_left_error_tariff"
+        , "16_std_tariff"/sqrt("1_cnt_by_tariff")*2 as "19_interval_error_tariff"
+        , round("17_std_city" + "17_std_city" / sqrt("7_cnt_by_city")::numeric,3) as "20_right_error_city"
+        , round("17_std_city" - "17_std_city" / sqrt("7_cnt_by_city")::numeric,3) as "20_left_error_city"
+        , "17_std_city" / sqrt("7_cnt_by_city")*2 as "20_interval_error_city"
+        , round("18_std_tariff_city" + "18_std_tariff_city" / sqrt("13_cnt_by_city_tariff")::numeric,3) as "21_right_error_tariff_city"
+        , round("18_std_tariff_city" - "18_std_tariff_city" / sqrt("13_cnt_by_city_tariff")::numeric,3) as "21_left_error_tariff_city"
+        , "18_std_tariff_city" / sqrt("13_cnt_by_city_tariff")*2 as "21_interval_error_tariff_city"
+from
+    -- t2
+    (select    t1.*
+         ------- сигма/ст. отклонения
+            , stddev(is_convertion) over(partition by name_tariff) as "16_std_tariff"
+            , stddev(is_convertion) over(partition by name_tariff) as "17_std_city"
+            , stddev(is_convertion) over(partition by name_tariff, name_city) as "18_std_tariff_city"
+    
+    from
+        -- t1
+        (select       id_order
+                    , name_city
+                    , name_tariff
+                    , case when order_finish_time is not null then 1 else 0 end as is_convertion
+                    
+                    ------- тариф
+                    , count(*) over (partition by name_tariff) as "1_cnt_by_tariff"
+                    , sum(case when id_driver is not null then 1 else 0 end) over (partition by name_tariff) as "2_v2_tariff"
+                    , sum(case when assign_time is not null then 1 else 0 end) over (partition by name_tariff) as "3_v3_tariff"
+                    , sum(case when arrive_to_client_time is not null then 1 else 0 end) over (partition by name_tariff) as "4_v4_tariff"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_tariff) as "5_v5_tariff"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_tariff)::float/sum(case when order_time is not null then 1 else 0 end) over (partition by name_tariff)  as "6_o2r_tariff"
+                    
+                    ------- город
+                    , count(*) over(partition by name_city) as "7_cnt_by_city"
+                    , sum(case when id_driver is not null then 1 else 0 end) over (partition by name_city) as "8_v2_city"
+                    , sum(case when assign_time is not null then 1 else 0 end) over (partition by name_city) as "9_v3_city"
+                    , sum(case when arrive_to_client_time is not null then 1 else 0 end) over (partition by name_city) as "10_v4_city"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_city) as "11_v5_city"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_city)::float/sum(case when order_time is not null then 1 else 0 end) over (partition by name_city)  as "12_o2r_city"
+                    
+                    ------- город/тариф
+                    , count(*) over(partition by name_city, name_tariff) as "13_cnt_by_city_tariff"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_city, name_tariff) as "14_v5_city_tariff"
+                    , sum(case when order_finish_time is not null then 1 else 0 end) over (partition by name_city, name_tariff)::float/sum(case when order_time is not null then 1 else 0 end) over (partition by name_city, name_tariff)  as "15_o2r_city_tariff"
+            
+            from skytaxi.order_list as t1
+                join skytaxi.tariff_dict as t2
+                    on t1.id_tariff = t2.id_tariff
+                join skytaxi.city_dict as t3 
+                    on t1.id_city = t3.id_city
+        ) t1
+    )t2

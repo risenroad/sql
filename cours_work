@@ -84,6 +84,7 @@ dates_by_stud as
         , last_class
 from first_transaction as ft  
     inner join last_class as lc
+    --full join last_class as lc
         on ft.user_id = lc.user_id
     left join all_dates as ad
         on 1=1
@@ -134,6 +135,8 @@ where class_status in ('success', 'failed_by_student')
 group by user_id, date(class_start_datetime)
 ), 
 
+
+-- кумулятивное наполнение уроков для каждого ученика
 studied_classes_by_date as 
 
 (select t1.user_id
@@ -145,9 +148,11 @@ from dates_by_stud as t1
      left join  class_day_by_stud as t2
         on t2.date = t1.dt
         and t2.user_id = t1.user_id
-)
+),
 
+by_day_stud_balance as
 
+(
 select   t1.*
        , t2.cnt_null_classes
        , cum_sum_stud_class
@@ -156,5 +161,15 @@ from lesons_by_every_day_users as t1
     join studied_classes_by_date as t2
     on t1.date = t2.dt
     and t1.user_id = t2.user_id
-where t1.user_id = 325348
+)
 
+
+--total_ballance 
+
+select   date
+        , sum(cnt_pay_classes) pay_classes
+        , sum(cum_sum_stud_class) studed_classes
+        , sum(by_day_balance) balance
+from by_day_stud_balance
+group by date
+order by date

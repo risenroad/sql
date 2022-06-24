@@ -1,0 +1,160 @@
+--- Юзеры, у которых нет либо уроков, либо оплат - 94 человека (всего 1015, без пропусков в данных 921)
+
+-- broken_users as
+
+-- (select user_id
+-- from first_transaction as ft 
+
+-- UNION
+
+-- select user_id      
+-- from last_class as lc 
+
+-- where  ft.user_id is null or lc.user_id is null
+-- )
+
+-- not_broken_users as
+-- (
+--     select *
+--             , date_part('day', last_class - first_transaction)
+--             --ft.user_id as user_id
+--           -- , GENERATE_SERIES(last_class::date, first_transaction::date, '1 day') as dt
+--     from first_transaction as ft  
+--         full outer join last_class as lc
+--             on ft.user_id = lc.user_id
+-- ), 
+
+
+
+
+-- Наша задача — смоделировать изменение балансов студентов. Баланс — это количество уроков, которое есть у каждого студента. 
+
+-- Чтобы проверить, всё ли в порядке с нашими данными, составить список гипотез и вопросов, нам важно понимать: 
+
+-- - сколько всего уроков было на балансе **всех учеников** за каждый календарный день;
+-- - как это количество менялось под влиянием транзакций (оплат, начислений, корректирующих списаний) 
+-- и уроков (списаний с баланса по мере прохождения уроков).
+
+-- Также мы хотим создать таблицу, где будут балансы **каждого студента** за каждый день.
+
+-- ### Результат курсовой
+
+-- В результате должен получиться запрос, который собирает данные о балансах студентов за каждый прожитый ими день.
+
+
+--- Дата первой транзацкции
+
+with first_transaction as
+
+(select    user_id
+        , min(date(transaction_datetime)) as first_transaction
+from skyeng_db.payments
+where status_name = 'success'
+group by user_id
+),
+
+
+
+--- Все даты 
+
+all_dates as
+
+(select GENERATE_SERIES(MIN(class_start_datetime::date), MAX(class_start_datetime::date), '1 day')as dt
+from skyeng_db.classes
+),
+
+--- Дата последнего урока
+
+last_class as
+(select    user_id
+        , max(date(class_start_datetime)) as last_class
+from skyeng_db.classes
+where class_status = 'success'
+    and class_type != 'trial'
+group by user_id
+),
+
+
+--- Даты жизни для каждого клиента
+dates_by_stud as
+
+(select ft.user_id
+        , first_transaction
+        , dt
+        , last_class
+from first_transaction as ft  
+    inner join last_class as lc
+        on ft.user_id = lc.user_id
+    left join all_dates as ad
+        on 1=1
+        and dt between first_transaction and last_class
+),        
+        
+-- Покупка уроков по дням для каждого юзера
+
+lessons_by_payment_day_users as
+
+(select user_id  
+        , date(transaction_datetime) as dt
+        , sum(classes) as cnt_classes
+from skyeng_db.payments
+where status_name = 'success'
+group by user_id, dt
+),
+
+
+-- Кумулятивная сумма купленных уроков с учетом дней, когда покупок не было 
+
+lesons_by_every_day_users as
+
+(
+select  dbs.user_id
+       -- , dbs.first_transaction
+       -- , dbs.last_class
+        , dbs.dt as date
+       -- , coalesce( lbpdu.cnt_classes, 0) as cnt_classes_null
+        , sum(coalesce( lbpdu.cnt_classes, 0)) over(partition by dbs.user_id order by dbs.dt) cnt_pay_classes
+    
+    from dates_by_stud as dbs
+        left join lessons_by_payment_day_users as lbpdu
+            on dbs.dt = lbpdu.dt
+                and dbs.user_id = lbpdu.user_id
+),
+
+-- уроки каждого студента по дням
+
+class_day_by_stud as 
+(
+select    user_id  
+            , count(*) cnt
+            , date(class_start_datetime) date
+from skyeng_db.classes
+where class_status in ('success', 'failed_by_student')
+    and class_type != 'trial'
+group by user_id, date(class_start_datetime)
+), 
+
+studied_classes_by_date as 
+
+(select t1.user_id
+        , t1.dt 
+        , coalesce(t2.cnt, 0) as cnt_null_classes
+        , sum(coalesce(t2.cnt, 0)) over (partition by t1.user_id order by dt) as cum_sum_stud_class
+
+from dates_by_stud as t1 
+     left join  class_day_by_stud as t2
+        on t2.date = t1.dt
+        and t2.user_id = t1.user_id
+)
+
+
+select   t1.*
+       , t2.cnt_null_classes
+       , cum_sum_stud_class
+       , cnt_pay_classes - cum_sum_stud_class as by_day_balance
+from lesons_by_every_day_users as t1
+    join studied_classes_by_date as t2
+    on t1.date = t2.dt
+    and t1.user_id = t2.user_id
+where t1.user_id = 325348
+

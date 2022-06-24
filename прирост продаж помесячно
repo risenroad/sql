@@ -1,0 +1,25 @@
+
+--Помесячно вывести прирост количества продаж в процентах относительно предыдущего месяца для всех анализов в 2020 году, где в названии в любом месте располагается слово "кров" или "тестостерон" в любом регистре.
+
+
+
+select *
+        ,coalesce(round((current_cnt - prev_cnt)*100/prev_cnt::numeric, 3), 0) as change
+from 
+(
+select *
+       , lag(current_cnt) over (partition by name order by month) as prev_cnt
+from
+(
+select an_name as name
+        , TO_CHAR(ord_datetime, 'mm') as month
+        , count(*) current_cnt
+from orders as t1
+  join analysis as t2
+    on t1.ord_an = t2.an_id
+where TO_CHAR(ord_datetime, 'YYYY') = '2020'
+    and lower(an_name) like "%кров%" or an_name like "%тестостерон%"
+group by TO_CHAR(ord_datetime, 'mm'), an_name
+) t1
+)t2
+order by name, month

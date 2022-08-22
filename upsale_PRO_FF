@@ -1,0 +1,81 @@
+WITH base_payments as
+
+(SELECT user_id
+            , DATE_TRUNC('month', DATE(created_at)) as month
+            , row_number() over(partition by user_id order by created_at) as rn_base
+            , course_service_type
+            , amount
+            , created_at
+            , CASE WHEN course_service_title like '%PRO%' or course_service_title like '%4%' THEN 1 END as PRO_bundle
+            , CASE WHEN course_service_title like '%ьюинг%' OR course_service_title like '%ewing%' or course_service_title like '%4%' THEN 1 END as Mewing_bundle
+FROM public.invoices
+WHERE course_id in (148, 113, 42, 87, 110, 98)
+AND status = 'paid'
+AND course_service_type in ('course_buy', 'course_service_bundle')
+),
+
+pro_payment as
+
+(SELECT 
+        DATE_TRUNC('month', create_payment::date) as month_upsale
+      , create_payment
+      , lag_created_at::date
+      , course_service_type
+      , amount
+      , course_id
+      , user_id
+      , lag_course_id
+      --, course_service_id
+      --, course_service_title
+FROM(
+
+SELECT  row_number() over(partition by user_id order by created_at) as rn
+      , lag(course_id) over(partition by user_id order by created_at) as lag_course_id
+      , DATE(created_at) as create_payment
+      , DATE_TRUNC('month', DATE(created_at)) as month
+      , lag(created_at) over(partition by user_id order by created_at) as lag_created_at
+      , amount
+      , course_service_type
+      , user_id
+      , course_id
+      --, course_service_title
+      --, course_service_id
+      
+FROM public.invoices
+WHERE course_service_type in ('course_buy', 'course_service_bundle')
+-- AND course_id in (62, 148, 171, 163, 133, 172)
+AND status = 'paid'
+
+) as t1
+      
+--WHERE lag_course_id = 148
+WHERE course_id = 62
+--AND rn > 1
+)
+
+SELECT  month
+      , (create_payment::date - t1.created_at::date)/7  as week_diff
+      , lag_course_id
+      , course_id
+      , t1.course_service_type as basa_cs_type
+      , t2.course_service_type as pro_cs_type
+      , count(*) as cnt
+      , sum(t1.amount) as base_amount
+      , sum(t2.amount) as pro_amount
+      , PRO_bundle
+      , month_upsale
+     -- , lag_created_at::date
+FROM base_payments as t1
+      LEFT JOIN pro_payment as t2
+      ON t1.user_id = t2.user_id
+      AND rn_base = 1
+GROUP BY month
+       , week_diff
+       , course_id
+       , t1.course_service_type
+       , t2.course_service_type
+       , PRO_bundle
+       , Mewing_bundle
+       , month_upsale
+       , lag_course_id
+      -- , lag_created_at::date
